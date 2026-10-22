@@ -1,0 +1,634 @@
+---
+title: "Seurat"
+output: html_document
+date: "2026-10-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+myPath <- "/Users/user_moshuta/Desktop/Analysis_of_Omics/pbmc3k_filtered_gene_bc_matrices/filtered_gene_bc_matrices/hg19/"
+myProject <- "PBMC3k"
+setwd(myPath)
+dir()
+library(Seurat)
+library(dplyr)
+library(patchwork)
+pbmc.data <- Read10X(data.dir=".") #load dataset
+?Read10X
+dir()
+str(pbmc.data) #observe dataset
+```
+
+
+
+We keep genes expressed >= 0.1%
+and cells with >= 200 genes
+
+```{r}
+dim(pbmc.data) #no. rows and columns
+dim(pbmc.data)[2] #no. columns = no. cells
+dim(pbmc.data)[2]*0.001 #2.7 can't be no. cells => round
+n_genes <- 200
+n_cells <- round(dim(pbmc.data)[2]*0.001)
+```
+
+
+
+Create Seurat object
+```{r}
+pbmc <- CreateSeuratObject(counts = pbmc.data, project = myProject, min.cells = n_cells, min.features = n_genes)
+pbmc
+```
+```{r}
+dim(pbmc)
+```
+```{r}
+str(rownames(pbmc))
+```
+```{r}
+str(colnames(pbmc))
+```
+```{r}
+str(pbmc)
+```
+
+
+
+
+• nCount_RNA the total number of molecules detected within a cell;
+• nFeature_RNA the number of unique genes detected in each cell.
+
+```{r}
+str(pbmc@meta.data)
+```
+```{r}
+str(pbmc@meta.data$nCount_RNA) #same
+str(pbmc$nCount_RNA)           #same
+```
+
+
+Добавляем столбец в метадату с митохондриальной РНК
+
+```{r}
+pbmc$percent.mt <- PercentageFeatureSet(pbmc, pattern="^MT-")
+str(pbmc@meta.data)
+```
+
+
+Violin-plot
+
+```{r}
+pdf("figures/violinplot.pdf")
+VlnPlot(pbmc, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol = 3)
+dev.off
+
+
+VlnPlot(pbmc, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol = 3)
+```
+
+
+Histogram
+```{r}
+hist(pbmc@meta.data$nFeature_RNA, breaks=200) # zoom in 0-10
+```
+
+
+Scatter-plot genes/mt
+```{r}
+FeatureScatter(pbmc, feature1 = "nFeature_RNA", feature2 = "percent.mt")
+```
+
+
+
+Scatter-plot genes/UMI
+```{r}
+FeatureScatter(pbmc, feature1 = "nFeature_RNA", feature2 = "nCount_RNA")
+```
+
+
+Both Scatters
+```{r}
+plot1 <- FeatureScatter(pbmc, feature1 = "nFeature_RNA", feature2 = "percent.mt") + NoLegend()
+plot2 <- FeatureScatter(pbmc, feature1 = "nFeature_RNA", feature2 = "nCount_RNA") + NoLegend()
+plot1 + plot2
+```
+
+
+Thresholds, filters - sample-dependent out of plots above
+Firstly, we check how many scatter-dots we'll lose
+
+
+```{r}
+sum(pbmc$nFeature_RNA > 200 & pbmc$nFeature_RNA < 2500 & pbmc$percent.mt < 5)
+newdim <- sum(pbmc$nFeature_RNA > 200 & pbmc$nFeature_RNA < 2500 & pbmc$percent.mt < 5)
+```
+
+```{r}
+dim(pbmc)[2]
+```
+```{r}
+newdim/dim(pbmc)[2]
+```
+
+Removing the dots not meeting thresholds
+
+```{r}
+pbmc <- subset(pbmc, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Normalization
+
+```{r}
+pbmc <- NormalizeData(pbmc)
+```
+```{r}
+str(pbmc) #loor at layers: There are only 2: "counts" - before norm and "data" - after norm
+```
+
+
+Take only norm data to the new variable out of pbmc
+
+```{r}
+expression_matrix <- GetAssayData(pbmc, layer="data")
+str(expression_matrix["CD3D",])
+```
+
+For each gene count their own mean and standard deviation
+It's called scaling
+
+```{r}
+VlnPlot(pbmc, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol = 3) #no outliers now
+```
+
+Save the environment to avoid rerunning next time
+
+```{r}
+rm(pbmc.data)
+rm(expression_matrix)
+save.image("saves/pbmc_preprocessed.RData")
+```
+
+
+### END OF 01_PREPROCESSING SCRIPT
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### Identify highly variable genes = Feature selection
+
+# Find all variable genes and then choose top 15 of them
+
+```{r}
+pbmc <- FindVariableFeatures(pbmc)
+top15 <- head(VariableFeatures(pbmc), 15)
+```
+
+
+
+# Plot all genes with red color for variable ones and names only for top 15
+
+```{r}
+plot1 <- VariableFeaturePlot(pbmc)
+LabelPoints(plot = plot1, points = top15, repel = TRUE) 
+#repel for good names distance
+pdf('figures/highlyvariablegenes.pdf')
+LabelPoints(plot = plot1, points = top15, repel = TRUE)
+dev.off
+```
+
+
+
+
+
+
+# Scaling for giving less force to the genes which are normally highly expressed
+
+```{r}
+pbmc <- ScaleData(pbmc, features = rownames(pbmc))
+```
+
+
+# PCA
+
+```{r}
+pbmc <- RunPCA(pbmc)
+```
+
+
+# Everything is stll there in pbmc, new info adds to new pbmc@... and new commands
+
+```{r}
+str(pbmc@reductions)
+```
+# Show the same it gives automatically while running
+
+```{r}
+print(pbmc[["pca"]])
+```
+
+
+# Plot PCA
+
+```{r}
+pdf('figures/pca.pdf')
+DimPlot(pbmc, reduction = "pca")
+dev.off
+
+DimPlot(pbmc, reduction = "pca")
+```
+
+
+# Plot PCA coloring PCA according to QC metrics from metadata
+
+```{r}
+str(pbmc@meta.data)
+```
+where 
+• nCount_RNA the total number of molecules detected within a cell;
+• nFeature_RNA the number of unique genes detected in each cell;
+• percent.mt percentage of mitochondrial genes
+
+```{r}
+FeaturePlot(pbmc, features = "nCount_RNA", reduction ="pca")
+```
+
+
+CD3D кодирует δ-субъединицу белкового комплекса CD3, который входит в состав T-cell receptor complex (TCR-CD3).
+Этот комплекс необходим T-лимфоцитам для передачи сигнала после распознавания антигена.
+Поэтому CD3D является одним из характерных маркеров T-клеток.
+
+
+```{r}
+FeaturePlot(pbmc, features = "percent.mt", reduction ="pca")
+```
+```{r}
+FeaturePlot(pbmc, features = 'CD3D', reduction = 'pca')
+```
+Другие маркерные гены: CD3D и CD3E характерны для T-клеток, MS4A1 для B-клеток, а LYZ часто сильно экспрессируется в моноцитах
+
+```{r}
+FeaturePlot(pbmc, features = c("CD3D", "CD3E", "MS4A1", "LYZ"), reduction = "pca")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Cell Cycling genes
+
+В scRNA-seq мы анализируем cell cycle, чтобы понять, какие клетки активно делятся и насколько стадия деления влияет на различия в экспрессии генов.
+
+Представь, что у нас есть 1000 T-лимфоцитов. Из них 200 активно делятся.
+У делящихся клеток увеличивается экспрессия генов, связанных с репликацией ДНК и митозом. Например, MKI67, TOP2A и PCNA.
+Когда мы выполняем PCA, эти 200 клеток могут отделиться от остальных из-за стадии клеточного цикла, хотя все они принадлежат к одному типу клеток.
+Это важно, если наша задача заключается в определении типов клеток, поскольку cell cycle может сильно влиять на кластеризацию.
+
+```{r}
+cc.genes
+```
+Seurat использует заранее известные маркерные гены фаз S и G2/M и рассчитывает для каждой клетки два показателя:
+S.Score: насколько выражена программа репликации ДНК.
+G2M.Score: насколько выражена программа подготовки к митозу и деления
+
+
+# Counting scores of cell cycling genes (kinda similar to what we did with mt.percent)
+
+```{r}
+pbmc <- CellCycleScoring(pbmc, s.features = cc.genes$s.genes, g2m.features = cc.genes$g2m.genes)
+?CellCycleScoring
+```
+
+
+
+# Plot PCA with cells colored by cycling cells' genes percentage to find proliferating cells
+
+```{r}
+str(pbmc@meta.data)
+```
+```{r}
+FeaturePlot(pbmc, features = c("S.Score", "G2M.Score"))
+```
+We have no proliferating cells
+
+
+# Color cells according to their Phase estimation
+# Phase is not numerical and not continious => no FeaturePlot but DimPlot with group.by
+
+```{r}
+DimPlot(pbmc, group.by = "Phase")
+```
+
+It doesn't look fine because too little proliferating (= cycling) cells
+But if we had many cycling cells => It would have looked fine
+
+
+
+
+
+
+
+
+
+
+
+
+# We made PCA 2-dimensional just for check and NOW we need to determine dimensionality of the dataset
+
+There are 2 approaches for dimensionality determination: Heatmap of top components or Elbow plot of standart deviation
+
+```{r}
+pdf("figures/dimensionality_heatmaps.pdf", height=12) #default height is 7
+DimHeatmap(pbmc, dims = 1:15, cells = 500)
+dev.off()
+
+DimHeatmap(pbmc, dims = 1:15, cells = 500)
+```
+```{r}
+pdf("figures/elbow_plot.pdf")
+ElbowPlot(pbmc, reduction = "pca")
+dev.off()
+
+ElbowPlot(pbmc, reduction = "pca")
+```
+
+From 9th Principal Component we don't obtain anything new => Choose 8 PCs
+It's better to take more PCs than less
+
+
+
+# UMAP (Uniform Manifold Approximation and Projection)
+
+Главная идея: клетки с похожими транскриптомами должны находиться рядом.
+
+Чем UMAP отличается от PCA?
+- PCA ищет линейные комбинации генов, объясняющие максимальную дисперсию данных.
+- UMAP старается сохранить локальные отношения между клетками: кто на кого похож и кто является ближайшим соседом.
+
+Если T-клетки расположены в одном островке, а B-клетки в другом, расстояние между островками не позволяет сказать, насколько сильнее они различаются по сравнению с моноцитами
+
+UMAP может выглядеть немного иначе при повторных запусках из-за стохастической оптимизации
+
+
+
+UMAP:
+1. Находит \(k\) ближайших соседей каждой клетки в 10(8)-мерном пространстве.
+2. Строит взвешенный граф: клетки становятся узлами, а связи отражают их локальное сходство - в виде весов
+3. Размещает клетки в 2D, стараясь сохранить структуру соседства.
+
+Интерпретация
+Почему клетки расположены рядом: их профили экспрессии похожи в исходном PCA-пространстве.
+Почему клетки образуют отдельную группу: возможно, они принадлежат к одному типу клеток или имеют сходное функциональное состояние. Проверяем это с помощью маркерных генов.
+Почему один кластер далеко от другого: по одному расстоянию на UMAP нельзя количественно оценить степень биологического различия.
+
+```{r}
+pca_dims <- 8
+
+?RunUMAP
+
+#run UMAP
+pbmc <- RunUMAP(pbmc, dims=1:pca_dims)
+
+#plot UMAP
+plot1 <- DimPlot(pbmc, reduction = "umap") + NoLegend()
+plot2 <- DimPlot(pbmc, reduction = "pca") + NoLegend()
+plot1 + plot2
+
+pdf('figures/umap_and_pca_dimplot.pdf')
+plot1 + plot2
+dev.off()
+```
+In PCA clusters have biological meaning, clusters are diff cells
+
+После PCA каждая клетка имеет 8 координат:
+\[
+Cell_i=(PC_1,PC_2,...,PC_8)
+\]
+
+Каждая PC представляет линейную комбинацию экспрессии генов. PCA выбирает направления, объясняющие максимальную дисперсию данных
+
+UMAP: использует те же 8 PCs, но создаёт новые координаты
+
+UMAP получает на вход координаты клеток по PC1–PC8.
+Затем он вычисляет расстояния между клетками в этом пространстве, находит ближайших соседей и строит взвешенный граф.
+
+После этого UMAP создаёт совершенно новые координаты:
+\[
+Cell_i=(UMAP_1,UMAP_2)
+\]
+
+
+А если сделать UMAP тоже в 8 измерениях? Он всё равно будет отличаться от PCA!
+Критерии оптимизации разные:
+- PCA: сохраняет направления максимальной дисперсии с помощью линейного преобразования.
+- UMAP: старается сохранить структуру локальных соседств с помощью нелинейной оптимизации.
+
+
+```{r}
+plot3 <- FeaturePlot(pbmc, features = 'CD3D', reduction = 'umap') + NoLegend()
+plot4 <- FeaturePlot(pbmc, features = 'CD3D', reduction = 'pca') + NoLegend()
+plot3 + plot4
+
+pdf('figures/umap_and_pca_featureplotcd3d.pdf', height=10)
+plot3 + plot4
+dev.off()
+```
+
+
+
+# Remove excess diversity of some genes which occur due to unrelevant to the study reason (cell cycle or mt or whatever)
+
+PCA ищет направления максимальной вариации, поэтому он может разделить клетки на две группы:
+- 800 неделящихся T-клеток.
+- 200 делящихся T-клеток.
+Хотя все 1000 клеток относятся к одному типу, PCA может воспринимать клеточный цикл как главное различие
+
+\[
+x_i^g=\beta_0^g+\beta_1^g S_i+\beta_2^g G2M_i+\varepsilon_i^g
+\]
+
+Мы регрессией получаем параметры бетта и тогда предсказания регрессии учитывают разницу от cell cycle и вычитают ее
+
+Допустим, модель обнаружила:
+\[
+\widehat{x}=3+5S.Score
+\]
+
+\(x_i^g\) — нормализованная логарифмированная экспрессия гена \(g\) в клетке \(i\).
+\\(S_i\), \(G2M_i\) — показатели активности клеточного цикла этой клетки.
+\(\beta_1^g\), \(\beta_2^g\) — насколько экспрессия данного гена связана с этими показателями.
+\(\varepsilon_i^g\) — остаток (residual), который модель не объяснила клеточным циклом               <- наш таргет
+
+Условный пример: сравним две клетки
+Клетка A	Клетка B
+S.Score	0	1
+Реальная экспрессия	4	9
+Предсказано регрессией	3	8
+Residual	1	1
+
+Residual = Observed - Estimated with bettas (no epsilon)
+
+```{r}
+# Scale data preforming regression cell cycle
+pbmc_regressed <- ScaleData(pbmc, features = rownames(pbmc), vars.to.regress = c("S.Score", "G2M.Score"))
+```
+
+```{r}
+plot5 <- FeaturePlot(pbmc, features = 'CD3D', reduction = 'umap') + NoLegend()
+plot6 <- FeaturePlot(pbmc_regressed, features = 'CD3D', reduction = 'umap') + NoLegend()
+plot5 - plot6
+```
+
+
+### END OF 02_DIMENSIONALIT_REDUCTION SCRIPT
+
+
+
+
+
+# Clustering with shared nearest-neighbor (SNN)
+# how many common neigbor-nodes have two nodes in common => more weight; nodes = cells
+
+Алгоритм Louvain объединяет клетки в сообщества, максимизируя modularity
+
+Modularity оценивает, насколько хорошо граф разделён на сообщества: много сильных связей внутри кластеров и относительно мало между ними.
+
+поэтому понимаем из-за Лувана где кончается один кластер и начинается другой
+
+Самое главное отличие от UMAP: UMAP размещал клетки в 2D для визуализации, а Louvain действительно присваивает клеткам номера кластеров на основе SNN-графа, построенного в PCA-пространстве.
+
+
+```{r}
+#Building SNN graph
+pbmc <- FindNeighbors(pbmc, dims=1:pca_dims)
+
+#in pbmc we now have @graph with knn and snn
+```
+
+The FindClusters() function implements the second step. This function contains a
+resolution parameter that sets the ‘granularity’ of the downstream clustering, with
+increased values leading to a greater number of clusters. In this example we use 0.5;
+setting this parameter between 0.4-1.2 typically returns good results for single-cell
+datasets of around 3K cells. Optimal resolution often increases for larger datasets.
+
+```{r}
+pbmc <- FindClusters(pbmc, resolution = 0.5)
+```
+Clusters are saved as new columns in the meta.data, with the name “RNA_snn_res.”
+and the resolution value. Note that they are numbered according to the number of
+cells (in decreasing order), i.e. cluster 0 is the most abundant
+
+
+```{r}
+DimPlot(pbmc, group.by="RNA_snn_res.0.5", label=TRUE)
+
+pdf("figures/clustering_with_snn_separation_of_umap.pdf")
+DimPlot(pbmc, group.by="RNA_snn_res.0.5", label=TRUE)
+dev.off()
+```
+
+# Experiment with resolution parameter that sets the ‘granularity’ of the downstream clustering
+
+
+Например, T-клетки при resolution = 0.2 могут образовать один кластер, а при 0.8 разделиться на CD4+ и CD8+ T-клетки.
+
+Например, если один кластер разделился на два и у них различается экспрессия CD4 и CD8A, это может быть полезным разделением.Но если два новых кластера имеют практически одинаковые маркеры, повышенное resolution не обязательно улучшило анализ
+
+Кластеры расположены в убывании по численности кластера
+
+```{r}
+res.try <- c(0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2)
+
+pbmc <- FindClusters(pbmc, resolution = res.try)
+```
+```{r}
+str(pbmc@meta.data)
+```
+ 
+```{r}
+DimPlot(pbmc, group.by="RNA_snn_res.0.2", label=TRUE)
+```
+```{r}
+DimPlot(pbmc, group.by="RNA_snn_res.0.4", label=TRUE)
+```
+```{r}
+DimPlot(pbmc, group.by="RNA_snn_res.0.6", label=TRUE)
+```
+ 
+```{r}
+DimPlot(pbmc, group.by="RNA_snn_res.0.8", label=TRUE)
+```
+
+
+
+# Calculate the numerousity of each cluster at resolution 0.5
+
+```{r}
+table(pbmc$RNA_snn_res.0.5)
+```
+```{r}
+save.image("C:/Users/user_moshuta/Desktop/Analysis_of_Omics/pbmc3k_filtered_gene_bc_matrices/filtered_gene_bc_matrices/hg19/saves/21_october_umap/umap.RData")
+savehistory("C:/Users/user_moshuta/Desktop/Analysis_of_Omics/pbmc3k_filtered_gene_bc_matrices/filtered_gene_bc_matrices/hg19/saves/21_october_umap/umap.Rhistory")
+```
+
+
