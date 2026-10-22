@@ -80,7 +80,7 @@ Violin-plot
 ```{r}
 pdf("figures/violinplot.pdf")
 VlnPlot(pbmc, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol = 3)
-dev.off
+dev.off()
 
 
 VlnPlot(pbmc, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol = 3)
@@ -246,7 +246,7 @@ LabelPoints(plot = plot1, points = top15, repel = TRUE)
 #repel for good names distance
 pdf('figures/highlyvariablegenes.pdf')
 LabelPoints(plot = plot1, points = top15, repel = TRUE)
-dev.off
+dev.off()
 ```
 
 
@@ -285,7 +285,7 @@ print(pbmc[["pca"]])
 ```{r}
 pdf('figures/pca.pdf')
 DimPlot(pbmc, reduction = "pca")
-dev.off
+dev.off()
 
 DimPlot(pbmc, reduction = "pca")
 ```
